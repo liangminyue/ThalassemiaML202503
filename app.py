@@ -3,6 +3,8 @@ import joblib
 import pandas as pd
 import numpy as np
 import os
+import shap
+import matplotlib.pyplot as plt
 
 # 添加环境变量设置，禁用GPU
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -10,11 +12,19 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 # 性能优化：添加缓存装饰器
 @st.cache_data
 def load_resources():
-    return (
-        joblib.load('xgb_regressor.pkl'),
-        joblib.load('scaler.pkl')
-    )
+    model = joblib.load('xgb_regressor.pkl')
+    # 双重保障设置
+    model.set_params(**{
+        'tree_method': 'hist',
+        'predictor': 'cpu_predictor',
+        'gpu_id': -1
+    })
+    return model, joblib.load('scaler.pkl')
 model, scaler = load_resources()
+
+# 配置集中管理
+FEATURE_NAMES = ['年龄', '性别', '身高', '体重', '本次输血量', 'HGB前']
+GENDER_MAPPING = {'男': 1, '女': 0}
 
 # 设置页面标题
 st.title('HGB预测系统')
@@ -45,8 +55,6 @@ def create_inputs():
 
 # 辅助函数优化：独立数据处理函数
 def process_inputs(inputs):
-    GENDER_MAPPING = {'男': 1, '女': 0}
-    
     df = pd.DataFrame([[
         inputs['age'],
         GENDER_MAPPING[inputs['gender']],
@@ -55,8 +63,32 @@ def process_inputs(inputs):
         inputs['blood_volume'],
         inputs['hgb_before']
     ]], columns=['年龄', '性别', '身高', '体重', '本次输血量', 'HGB前'])
-    
+
     return scaler.transform(df)
+
+# 输入验证增强
+def validate_inputs(inputs):
+    errors = []
+    if inputs['height'] < 50 or inputs['height'] > 250:
+        errors.append("身高应在50-250cm之间")
+    if inputs['weight'] < 2 or inputs['weight'] > 200:
+        errors.append("体重应在2-200kg之间")
+    return errors
+
+# SHAP可视化函数
+def plot_shap_explanation(model, sample):
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(sample)
+
+    plt.figure(figsize=(10, 6))
+    shap.force_plot(explainer.expected_value,
+                   shap_values,
+                   sample,
+                   feature_names=FEATURE_NAMES,
+                   matplotlib=True,
+                   show=False)
+    plt.tight_layout()
+    return plt.gcf()
 
 # 获取用户输入
 inputs, submitted = create_inputs()
@@ -64,20 +96,32 @@ inputs, submitted = create_inputs()
 # 功能增强：添加数据验证与异常处理
 if submitted:
     try:
-        # 数值范围校验（排除性别字段）
-        numeric_fields = ['age', 'height', 'weight', 'blood_volume', 'hgb_before']
-        if not all(isinstance(inputs[field], (int, float)) for field in numeric_fields):
-            raise ValueError("数值输入格式错误")
-        if any(inputs[field] < 0 for field in numeric_fields):
-            raise ValueError("输入值不能为负数")
-            
-        # 数据处理逻辑
+        # 数据验证
+        validation_errors = validate_inputs(inputs)
+        if validation_errors:
+            raise ValueError("\n".join(validation_errors))
+
+        # 数据处理
         processed_data = process_inputs(inputs)
-        
-        # 预测结果展示优化
+
+        # 预测结果
         with st.spinner('预测中...'):
             prediction = model.predict(processed_data)
             st.metric(label="预测HGB值", value=f"{prediction[0]:.2f} g/L")
-            
+
+            # SHAP可视化
+            st.subheader("特征影响分析")
+            sample_df = pd.DataFrame([[
+                inputs['age'],
+                GENDER_MAPPING[inputs['gender']],
+                inputs['height'],
+                inputs['weight'],
+                inputs['blood_volume'],
+                inputs['hgb_before']
+            ]], columns=FEATURE_NAMES)
+
+            fig = plot_shap_explanation(model, sample_df.values)
+            st.pyplot(fig)
+
     except Exception as e:
-        st.error(f"发生错误: {str(e)}")
+        st.error(f"输入验证错误: {str(e)}")
