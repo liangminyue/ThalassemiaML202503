@@ -2,7 +2,7 @@ scikit-learn==1.2.2
 streamlit==1.20.0
 joblib==1.2.0
 pandas==1.4.3
-numpy==1.21.5
+numpy==1.23.5
 xgboost==1.7.3 
 shap==0.42.1
 matplotlib==3.5.3
