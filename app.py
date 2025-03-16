@@ -61,8 +61,11 @@ inputs, submitted = create_inputs()
 # 功能增强：添加数据验证与异常处理
 if submitted:
     try:
-        # 添加数值范围校验
-        if any(v < 0 for v in inputs.values()):
+        # 数值范围校验（排除性别字段）
+        numeric_fields = ['age', 'height', 'weight', 'blood_volume', 'hgb_before']
+        if not all(isinstance(inputs[field], (int, float)) for field in numeric_fields):
+            raise ValueError("数值输入格式错误")
+        if any(inputs[field] < 0 for field in numeric_fields):
             raise ValueError("输入值不能为负数")
             
         # 数据处理逻辑
