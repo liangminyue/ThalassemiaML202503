@@ -1,8 +1,11 @@
-# app.py
 import streamlit as st
 import joblib
 import pandas as pd
 import numpy as np
+import os
+
+# 添加环境变量设置，禁用GPU
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 # 性能优化：添加缓存装饰器
 @st.cache_data
